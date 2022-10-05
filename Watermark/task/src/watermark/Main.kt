@@ -10,59 +10,89 @@ fun main() {
 
     val image = inputImage()
     val watermark = inputWatermark(image)
+    val transparency = checkForTransparencyUse(watermark)
     val weight = inputWeight()
     val outputName = outputImageFileName()
     val extension = outputExtension(outputName)
-    val transparency = checkForTransparency(watermark)
-    val outputImage = outputImage(image, watermark, weight)
+    val outputImage = createOutputImage(image, watermark, weight, transparency)
+
     createOutputFile(outputName, extension, outputImage)
-
 }
-
 fun inputImage(): BufferedImage {
+
     val image: BufferedImage
+
     print("Input the image filename:\n> ")
     val imageName = readln()
+
     val imageFile = File(imageName)
 
     if (!imageFile.exists() && !imageFile.isFile) {
+
         println("The file $imageName doesn't exist.")
         exitProcess(0)
-    } else if (ImageIO.read(imageFile).colorModel.numComponents !in 3..4) {
-        println("The number of image color components isn't 3 or 4.")
+
+    } else if (ImageIO.read(imageFile).colorModel.numComponents != 3) {
+
+        println("The number of image color components isn't 3.")
         exitProcess(0)
+
     } else if (ImageIO.read(imageFile).colorModel.pixelSize !in 24..32) {
+
         println("The image isn't 24 or 32-bit.")
         exitProcess(0)
+
     } else {
         image = ImageIO.read(imageFile)
     }
+
     return image
 }
 fun inputWatermark(image: BufferedImage): BufferedImage {
-    val watermark: BufferedImage
+
+    lateinit var watermark: BufferedImage
+
     print("Input the watermark image filename:\n> ")
     val watermarkName = readln()
+
     val watermarkFile = File(watermarkName)
 
     if (!watermarkFile.exists() && !watermarkFile.isFile) {
+
         println("The file $watermarkName doesn't exist.")
         exitProcess(0)
-    } else if (ImageIO.read(watermarkFile).colorModel.numComponents !in 3..4) {
-        println("The number of watermark color components isn't 3 or 4.")
+
+    } else if (ImageIO.read(watermarkFile).transparency != 3
+        && ImageIO.read(watermarkFile).colorModel.numComponents < 3) {
+
+        println("The number of watermark color components isn't 3.")
         exitProcess(0)
+
     } else if (ImageIO.read(watermarkFile).colorModel.pixelSize !in 24..32) {
+
         println("The watermark isn't 24 or 32-bit.")
         exitProcess(0)
+
     } else if ((image.height != ImageIO.read(watermarkFile).height) && (image.width != ImageIO.read(watermarkFile).width)) {
+
         println("The image and watermark dimensions are different.")
         exitProcess(0)
+
     } else {
         watermark = ImageIO.read(watermarkFile)
     }
+
     return watermark
 }
+fun checkForTransparencyUse (watermark: BufferedImage): Boolean {
+
+    return if (watermark.transparency == 3) {
+        print("Do you want to use the watermark's Alpha channel?\n> ")
+        readln().lowercase() == "yes"
+    } else false
+}
 fun inputWeight (): Int {
+
     val weight: Int
 
     print("Input the watermark transparency percentage (Integer 0-100):\n> ")
@@ -77,7 +107,7 @@ fun inputWeight (): Int {
 
     weight = weightString.toInt()
 
-    if (weight !in 0..255) {
+    if (weight !in 0..100) {
         println("The transparency percentage is out of range.")
         exitProcess(0)
     }
@@ -100,36 +130,53 @@ fun outputImageFileName (): String {
 fun outputExtension(outputName: String): String {
     return if (outputName.endsWith("png")) "png" else "jpg"
 }
-fun checkForTransparency (watermark: BufferedImage): Boolean {
-    return if (watermark.transparency == 3) {
-        println("Do you want to use the watermark's Alpha channel?")
-//        if (readln() == "yes") {
-//            ...
-//        }
-        true
-    } else false
-}
-fun outputImage (image: BufferedImage, watermark: BufferedImage, weight: Int): BufferedImage {
+fun createOutputImage (image:BufferedImage, watermark:BufferedImage, weight:Int, transparency:Boolean): BufferedImage {
+
     val outputImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
 
     for (x in 0 until image.width) {
         for (y in 0 until image.height) {
 
-            val i = Color(image.getRGB(x, y))
-            val w = Color(watermark.getRGB(x, y))
+            if (transparency) {
 
-            val color = Color(
-                (weight * w.red + (100 - weight) * i.red) / 100,
-                (weight * w.green + (100 - weight) * i.green) / 100,
-                (weight * w.blue + (100 - weight) * i.blue) / 100
-            )
-            outputImage.setRGB(x, y, color.rgb)
+                val w = Color(watermark.getRGB(x, y), true)
+
+                if (w.alpha == 0) outputImage.setRGB(x, y, Color(image.getRGB(x, y)).rgb)
+
+                if (w.alpha == 255) {
+                    val i = Color(image.getRGB(x, y) )
+                    val color = Color(
+                        (weight * w.red + (100 - weight) * i.red) / 100,
+                        (weight * w.green + (100 - weight) * i.green) / 100,
+                        (weight * w.blue + (100 - weight) * i.blue) / 100
+                    )
+                    outputImage.setRGB(x, y, color.rgb)
+                }
+
+            } else {
+
+                val i = Color(image.getRGB(x, y) )
+                val w = Color(watermark.getRGB(x, y))
+                val color = Color(
+                    (weight * w.red + (100 - weight) * i.red) / 100,
+                    (weight * w.green + (100 - weight) * i.green) / 100,
+                    (weight * w.blue + (100 - weight) * i.blue) / 100
+                )
+                outputImage.setRGB(x, y, color.rgb)
+            }
         }
     }
     return outputImage
 }
 fun createOutputFile (outputName: String, extension: String, outputImage: BufferedImage): File {
+
     val outputFile = File(outputName)
+
+    if (!outputFile.parent.isNullOrBlank() && !outputFile.parentFile.exists()) {
+        val parent = outputFile.parentFile
+        parent.mkdirs()
+    }
+
     outputFile.createNewFile()
     ImageIO.write(outputImage, extension, outputFile)
 

@@ -10,12 +10,14 @@ fun main() {
 
     val image = inputImage()
     val watermark = inputWatermark(image)
-    val transparency = checkForTransparencyUse(watermark)
+    val useAlpha = useAlpha(watermark)
+    val useFakeAlpha = useFakeAlpha(watermark)
+    val fakeAlphaColor = fakeAlphaColor(useFakeAlpha, watermark)
     val weight = inputWeight()
-    val outputName = outputImageFileName()
+    val outputName = makeOutputImageFileName()
     val extension = outputExtension(outputName)
-    val outputImage = createOutputImage(image, watermark, weight, transparency)
 
+    val outputImage = createOutputImage(image, watermark, weight, useAlpha, useFakeAlpha, fakeAlphaColor)
     createOutputFile(outputName, extension, outputImage)
 }
 fun inputImage(): BufferedImage {
@@ -26,8 +28,13 @@ fun inputImage(): BufferedImage {
     val imageName = readln()
 
     val imageFile = File(imageName)
+    val correctExtension =  (imageName.endsWith(".png") || imageName.endsWith(".jpg"))
 
-    if (!imageFile.exists() && !imageFile.isFile) {
+    if (!correctExtension) {
+        println("The file $imageName doesn't exist.")
+        exitProcess(0)
+
+    } else if (!imageFile.exists() && !imageFile.isFile) {
 
         println("The file $imageName doesn't exist.")
         exitProcess(0)
@@ -56,8 +63,13 @@ fun inputWatermark(image: BufferedImage): BufferedImage {
     val watermarkName = readln()
 
     val watermarkFile = File(watermarkName)
+    val correctExtension =  (watermarkName.endsWith(".png") || watermarkName.endsWith(".jpg"))
 
-    if (!watermarkFile.exists() && !watermarkFile.isFile) {
+    if (!correctExtension) {
+        println("The file $watermarkName doesn't exist.")
+        exitProcess(0)
+
+    } else if (!watermarkFile.exists() && !watermarkFile.isFile) {
 
         println("The file $watermarkName doesn't exist.")
         exitProcess(0)
@@ -84,12 +96,53 @@ fun inputWatermark(image: BufferedImage): BufferedImage {
 
     return watermark
 }
-fun checkForTransparencyUse (watermark: BufferedImage): Boolean {
+fun useAlpha (watermark: BufferedImage): Boolean {
 
     return if (watermark.transparency == 3) {
         print("Do you want to use the watermark's Alpha channel?\n> ")
+
         readln().lowercase() == "yes"
+
     } else false
+}
+fun useFakeAlpha (watermark: BufferedImage): Boolean {
+
+    return if (watermark.transparency != 3) {
+        println("Do you want to set a transparency color?")
+        (readln() == "yes")
+
+    } else {
+        false
+    }
+}
+fun fakeAlphaColor (useFakeAlpha: Boolean, watermark: BufferedImage): Color {
+
+    var fakeAlpha = Color (0, 0, 0)
+
+    if (watermark.transparency != 3 && useFakeAlpha) {
+        print("Input a transparency color ([Red] [Green] [Blue]):\n> ")
+        val inputString = readln()
+        val colorValues = mutableListOf<Int>()
+
+        if (inputString.isNotEmpty()) {
+            val colorStrings = inputString.split(" ")
+            var isDigit = true
+            for (value in colorStrings) {
+                for (i in value) {
+                    if (!i.isDigit()) isDigit = false
+                }
+                if (isDigit && value.toInt() in 0..255) colorValues.add(value.toInt())
+            }
+        }
+
+        if (colorValues.size != 3) {
+            println("The transparency color input is invalid.")
+            exitProcess(0)
+        } else {
+            fakeAlpha = Color(colorValues[0], colorValues[1], colorValues[2])
+        }
+    }
+    return fakeAlpha
 }
 fun inputWeight (): Int {
 
@@ -113,7 +166,7 @@ fun inputWeight (): Int {
     }
     return weight
 }
-fun outputImageFileName (): String {
+fun makeOutputImageFileName (): String {
 
     print("Input the output image filename (jpg or png extension):\n> ")
     val outputName = readln()
@@ -127,22 +180,22 @@ fun outputImageFileName (): String {
     }
     return outputName
 }
-fun outputExtension(outputName: String): String {
+fun outputExtension (outputName: String): String {
     return if (outputName.endsWith("png")) "png" else "jpg"
 }
-fun createOutputImage (image:BufferedImage, watermark:BufferedImage, weight:Int, transparency:Boolean): BufferedImage {
+fun createOutputImage (
+    image:BufferedImage, watermark:BufferedImage, weight:Int, useAlpha:Boolean, useFakeAlpha:Boolean, fakeAlpha:Color
+): BufferedImage {
 
     val outputImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
 
     for (x in 0 until image.width) {
         for (y in 0 until image.height) {
 
-            if (transparency) {
-
+            if (useAlpha) {
                 val w = Color(watermark.getRGB(x, y), true)
 
                 if (w.alpha == 0) outputImage.setRGB(x, y, Color(image.getRGB(x, y)).rgb)
-
                 if (w.alpha == 255) {
                     val i = Color(image.getRGB(x, y) )
                     val color = Color(
@@ -153,8 +206,22 @@ fun createOutputImage (image:BufferedImage, watermark:BufferedImage, weight:Int,
                     outputImage.setRGB(x, y, color.rgb)
                 }
 
-            } else {
+            } else if (useFakeAlpha) {
+                val w = Color(watermark.getRGB(x, y), true)
 
+                if (w.rgb == fakeAlpha.rgb) {
+                    outputImage.setRGB(x, y, Color(image.getRGB(x, y)).rgb)
+                } else {
+                    val i = Color(image.getRGB(x, y) )
+                    val color = Color(
+                        (weight * w.red + (100 - weight) * i.red) / 100,
+                        (weight * w.green + (100 - weight) * i.green) / 100,
+                        (weight * w.blue + (100 - weight) * i.blue) / 100
+                    )
+                    outputImage.setRGB(x, y, color.rgb)
+                }
+
+            } else {
                 val i = Color(image.getRGB(x, y) )
                 val w = Color(watermark.getRGB(x, y))
                 val color = Color(

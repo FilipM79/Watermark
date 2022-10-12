@@ -10,15 +10,17 @@ fun main() {
 
     val image = inputImage()
     val watermark = inputWatermark(image)
-    val useAlpha = useAlpha(watermark)
+    val checkAlpha = checkAlpha(watermark)
     val useFakeAlpha = useFakeAlpha(watermark)
-    val fakeAlphaColor = fakeAlphaColor(useFakeAlpha, watermark)
+    val fakeAlphaColor = fakeAlphaColor(useFakeAlpha, watermark, checkAlpha)
     val weight = inputWeight()
+    val watermarkPosition = watermarkPosition(image, watermark)
+    val newWatermark = newWatermark(watermarkPosition, image, watermark)
     val outputName = makeOutputImageFileName()
-    val extension = outputExtension(outputName)
+    val outputFileExtension = outputExtension(outputName)
 
-    val outputImage = createOutputImage(image, watermark, weight, useAlpha, useFakeAlpha, fakeAlphaColor)
-    createOutputFile(outputName, extension, outputImage)
+    val outputImage = createOutputImage(image, newWatermark, weight, checkAlpha, useFakeAlpha, fakeAlphaColor)
+    createOutputFile(outputName, outputFileExtension, outputImage)
 }
 fun inputImage(): BufferedImage {
 
@@ -35,17 +37,14 @@ fun inputImage(): BufferedImage {
         exitProcess(0)
 
     } else if (!imageFile.exists() && !imageFile.isFile) {
-
         println("The file $imageName doesn't exist.")
         exitProcess(0)
 
     } else if (ImageIO.read(imageFile).colorModel.numComponents != 3) {
-
         println("The number of image color components isn't 3.")
         exitProcess(0)
 
     } else if (ImageIO.read(imageFile).colorModel.pixelSize !in 24..32) {
-
         println("The image isn't 24 or 32-bit.")
         exitProcess(0)
 
@@ -70,7 +69,6 @@ fun inputWatermark(image: BufferedImage): BufferedImage {
         exitProcess(0)
 
     } else if (!watermarkFile.exists() && !watermarkFile.isFile) {
-
         println("The file $watermarkName doesn't exist.")
         exitProcess(0)
 
@@ -81,45 +79,38 @@ fun inputWatermark(image: BufferedImage): BufferedImage {
         exitProcess(0)
 
     } else if (ImageIO.read(watermarkFile).colorModel.pixelSize !in 24..32) {
-
         println("The watermark isn't 24 or 32-bit.")
         exitProcess(0)
 
-    } else if ((image.height != ImageIO.read(watermarkFile).height) && (image.width != ImageIO.read(watermarkFile).width)) {
-
-        println("The image and watermark dimensions are different.")
+    } else if (image.height < ImageIO.read(watermarkFile).height || image.width < ImageIO.read(watermarkFile).width) {
+        println("The watermark's dimensions are larger.")
         exitProcess(0)
 
     } else {
         watermark = ImageIO.read(watermarkFile)
     }
-
     return watermark
 }
-fun useAlpha (watermark: BufferedImage): Boolean {
-
+fun checkAlpha(watermark: BufferedImage): Boolean {
     return if (watermark.transparency == 3) {
         print("Do you want to use the watermark's Alpha channel?\n> ")
-
         readln().lowercase() == "yes"
 
     } else false
 }
-fun useFakeAlpha (watermark: BufferedImage): Boolean {
-
+fun useFakeAlpha(watermark: BufferedImage): Boolean {
     return if (watermark.transparency != 3) {
-        println("Do you want to set a transparency color?")
-        (readln() == "yes")
-
+        print("Do you want to set a transparency color?\n> ")
+        readln() == "yes"
     } else {
         false
     }
 }
-fun fakeAlphaColor (useFakeAlpha: Boolean, watermark: BufferedImage): Color {
+fun fakeAlphaColor(useFakeAlpha: Boolean, watermark: BufferedImage, checkAlpha: Boolean): Color {
 
     var fakeAlpha = Color (0, 0, 0)
 
-    if (watermark.transparency != 3 && useFakeAlpha) {
+    if (watermark.transparency != 3 && useFakeAlpha && !checkAlpha) {
         print("Input a transparency color ([Red] [Green] [Blue]):\n> ")
         val inputString = readln()
         val colorValues = mutableListOf<Int>()
@@ -127,11 +118,15 @@ fun fakeAlphaColor (useFakeAlpha: Boolean, watermark: BufferedImage): Color {
         if (inputString.isNotEmpty()) {
             val colorStrings = inputString.split(" ")
             var isDigit = true
-            for (value in colorStrings) {
-                for (i in value) {
-                    if (!i.isDigit()) isDigit = false
+
+            for (colorValue in colorStrings) {
+                try {
+                    colorValue.toInt()
+                } catch (e: NumberFormatException) {
+                    isDigit = false
                 }
-                if (isDigit && value.toInt() in 0..255) colorValues.add(value.toInt())
+
+                if (isDigit && colorValue.toInt() in 0..255) colorValues.add(colorValue.toInt())
             }
         }
 
@@ -144,7 +139,7 @@ fun fakeAlphaColor (useFakeAlpha: Boolean, watermark: BufferedImage): Color {
     }
     return fakeAlpha
 }
-fun inputWeight (): Int {
+fun inputWeight(): Int {
 
     val weight: Int
 
@@ -166,7 +161,115 @@ fun inputWeight (): Int {
     }
     return weight
 }
-fun makeOutputImageFileName (): String {
+fun watermarkPosition(image: BufferedImage, watermark: BufferedImage): MutableList<Int> {
+
+    var position = mutableListOf<Int>()
+    print("Choose the position method (single, grid):\n> ")
+
+    when (readln()) {
+        "single" -> {
+            val diffX = image.width - watermark.width
+            val diffY = image.height - watermark.height
+
+            print("Input the watermark position ([x 0-$diffX] [y 0-$diffY]):\n> ")
+            val positionString = readln()
+            position = checkPositionInput(positionString, diffX, diffY)
+        }
+
+        "grid" -> {
+           position.clear()
+        }
+
+        else -> {
+            println("The position method input is invalid.")
+            exitProcess(0)
+        }
+    }
+    return position
+}
+fun checkPositionInput(positionString: String, diffX: Int, diffY: Int): MutableList<Int> {
+
+    val positionInput = mutableListOf<Int>()
+
+    if (positionString.isNotEmpty()) {
+        val positionStrings = positionString.split(" ")
+        var notDigit = false
+
+        for (position in positionStrings) {
+            try {
+                position.toInt()
+            } catch (e: NumberFormatException) {
+                notDigit = true
+            }
+        }
+
+        if (notDigit || positionStrings.size != 2) {
+            println("The position input is invalid.")
+            exitProcess(0)
+
+        } else if (positionStrings[0].toInt() !in 0..diffX || positionStrings[1].toInt() !in 0..diffY) {
+            println("The position input is out of range.")
+            exitProcess(0)
+
+        }  else {
+            positionInput.add(positionStrings[0].toInt())
+            positionInput.add(positionStrings[1].toInt())
+        }
+    }
+    return positionInput
+}
+fun newWatermark(watermarkPosition: MutableList<Int>, image: BufferedImage, watermark: BufferedImage): BufferedImage {
+
+    val newWatermark = if (watermark.transparency == 3) {
+        BufferedImage(image.width, image.height, watermark.type)
+    } else {
+        BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
+    }
+
+    var xPos: Int
+    var yPos: Int
+
+    if (watermarkPosition.isEmpty()) {   // grid
+        xPos = -1
+        yPos = -1
+
+        for (x in 0 until image.width) {
+            xPos++
+            if (xPos >= watermark.width) xPos = 0
+
+            for (y in 0 until image.height) {
+                yPos++
+                if (yPos >= watermark.height) yPos = 0
+
+                if (watermark.transparency == 3) {
+                    newWatermark.setRGB(x, y, Color(watermark.getRGB(xPos, yPos), true).rgb)
+                } else {
+                    newWatermark.setRGB(x, y, Color(watermark.getRGB(xPos, yPos)).rgb)
+                }
+            }
+        }
+
+    } else {   // specified watermark position (single)
+        xPos = watermarkPosition[0]
+        yPos = watermarkPosition[1]
+
+        for (x in 0 .. image.width) {
+            for (y in 0 .. image.height) {
+
+                if((x in xPos until watermark.width + xPos) && (y in yPos until watermark.height + yPos)) {
+
+                    if (watermark.transparency == 3) {
+                        newWatermark.setRGB(x, y, Color(watermark.getRGB(x - xPos, y - yPos), true).rgb)
+                    } else {
+                        newWatermark.setRGB(x, y, Color(watermark.getRGB(x - xPos, y - yPos)).rgb)
+                    }
+                }
+            }
+        }
+    }
+    return newWatermark
+}
+fun makeOutputImageFileName(): String {
 
     print("Input the output image filename (jpg or png extension):\n> ")
     val outputName = readln()
@@ -180,20 +283,20 @@ fun makeOutputImageFileName (): String {
     }
     return outputName
 }
-fun outputExtension (outputName: String): String {
+fun outputExtension(outputName: String): String {
     return if (outputName.endsWith("png")) "png" else "jpg"
 }
-fun createOutputImage (
-    image:BufferedImage, watermark:BufferedImage, weight:Int, useAlpha:Boolean, useFakeAlpha:Boolean, fakeAlpha:Color
-): BufferedImage {
+fun createOutputImage(
+    image: BufferedImage, newWatermark: BufferedImage, weight: Int, checkAlpha: Boolean, useFakeAlpha: Boolean,
+    fakeAlpha: Color): BufferedImage {
 
     val outputImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
 
     for (x in 0 until image.width) {
         for (y in 0 until image.height) {
 
-            if (useAlpha) {
-                val w = Color(watermark.getRGB(x, y), true)
+            if (checkAlpha) {
+                val w = Color(newWatermark.getRGB(x, y), true)
 
                 if (w.alpha == 0) outputImage.setRGB(x, y, Color(image.getRGB(x, y)).rgb)
                 if (w.alpha == 255) {
@@ -207,9 +310,10 @@ fun createOutputImage (
                 }
 
             } else if (useFakeAlpha) {
-                val w = Color(watermark.getRGB(x, y), true)
+                val w = Color(newWatermark.getRGB(x, y))
+                val sameRgb = w.red == fakeAlpha.red && w.green == fakeAlpha.green && w.green == fakeAlpha.green
 
-                if (w.rgb == fakeAlpha.rgb) {
+                if (sameRgb) {
                     outputImage.setRGB(x, y, Color(image.getRGB(x, y)).rgb)
                 } else {
                     val i = Color(image.getRGB(x, y) )
@@ -223,7 +327,7 @@ fun createOutputImage (
 
             } else {
                 val i = Color(image.getRGB(x, y) )
-                val w = Color(watermark.getRGB(x, y))
+                val w = Color(newWatermark.getRGB(x, y))
                 val color = Color(
                     (weight * w.red + (100 - weight) * i.red) / 100,
                     (weight * w.green + (100 - weight) * i.green) / 100,
@@ -235,7 +339,7 @@ fun createOutputImage (
     }
     return outputImage
 }
-fun createOutputFile (outputName: String, extension: String, outputImage: BufferedImage): File {
+fun createOutputFile(outputName: String, extension: String, outputImage: BufferedImage): File {
 
     val outputFile = File(outputName)
 
